@@ -1,23 +1,58 @@
-from fastapi import FastAPI, UploadFile, Form
+from io import BytesIO
+from fastapi import FastAPI, Response, UploadFile, Form
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 import face_recognition
 import numpy as np
 import shutil
 import os
+from database import SessionLocal
+from models import DtUser
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Change this to specific origins in production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 KNOWN_FOLDER = "./known_faces"
 
 @app.post("/verify")
-async def verify_person(name: str = Form(...), file: UploadFile = Form(...)):
+async def verify_person(res: Response, name: str = Form(...), file: UploadFile = Form(...)):
+    # Save to postgres
+    db = SessionLocal()
+    user_img: str
+    try:    
+        record = db.query(DtUser).filter(DtUser.user_name == name).first()
+
+        if record:
+            if record.face_img:    
+                user_img = record.face_img
+            else:
+                res.status_code = 400
+                return {
+                    "message": "User hasn't uploaded reference image"
+                }
+        else:
+            res.status_code = 400
+            return {
+                "message": "User doesn't exist in database"
+            }
+    finally:
+        db.close()
+
     # Save the uploaded file temporarily
-    temp_path = f"./temp_upload.jpg"
-    with open(temp_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+    # temp_path = f"./temp_upload.jpg"
+    # with open(temp_path, "wb") as buffer:
+    #     shutil.copyfileobj(file.file, buffer)
+    user_img = BytesIO(user_img)
 
     # Encode uploaded face
-    unknown_img = face_recognition.load_image_file(temp_path)
+    unknown_img = face_recognition.load_image_file(user_img)
     unknown_encodings = face_recognition.face_encodings(unknown_img)
 
     if not unknown_encodings:
@@ -49,10 +84,12 @@ async def verify_person(name: str = Form(...), file: UploadFile = Form(...)):
     # Compare
     result = face_recognition.compare_faces([avg_encoding], unknown_encoding, tolerance=0.5)
     distance = face_recognition.face_distance([avg_encoding], unknown_encoding)[0]
+    isMatch = bool(result[0])
 
     os.remove(temp_path)
 
+    # Response
     return {
-        "matched": bool(result[0]),
+        "matched": isMatch,
         "distance": float(distance)
     }
