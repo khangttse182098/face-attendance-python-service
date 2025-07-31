@@ -2,44 +2,60 @@ from fastapi import FastAPI, Response, UploadFile, Form
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import face_recognition
+import numpy as np
+import cv2
+import time
 
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Change this to specific origins in production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-KNOWN_FOLDER = "./known_faces"
+def load_and_resize_image(file, scale=0.25):
+    file_bytes = np.frombuffer(file.read(), np.uint8)
+    image = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+    small_image = cv2.resize(image, (0, 0), fx=scale, fy=scale)
+    return image, small_image
 
 @app.post("/verify")
 async def verify_person(res: Response, comparedImg: UploadFile = Form(...), refImg: UploadFile = Form(...)):
-    # Encode compared image
-    compared_img = face_recognition.load_image_file(comparedImg.file)
-    compared_encodings = face_recognition.face_encodings(compared_img)
+    start_time = time.time()
 
-    # Encode reference image
-    ref_img = face_recognition.load_image_file(refImg.file)
-    ref_encodings = face_recognition.face_encodings(ref_img)
+    # Load and resize images
+    ref_full, ref_small = load_and_resize_image(refImg.file)
+    comp_full, comp_small = load_and_resize_image(comparedImg.file)
 
-    if not compared_encodings:
+    # Get face locations on small images, scale back to original
+    ref_locations = face_recognition.face_locations(ref_small)
+    comp_locations = face_recognition.face_locations(comp_small)
+
+    if not comp_locations:
         return JSONResponse(status_code=400, content={"detail": "No face detected in compared image."})
-    if not ref_encodings: 
+    if not ref_locations:
         return JSONResponse(status_code=400, content={"detail": "No face detected in reference image."})
 
-    ref_encoding = ref_encodings[0]
-    compared_encoding = compared_encodings[0]
+    # Scale up face locations
+    scale = 4  # since 0.25 used above
+    ref_locations = [(top*scale, right*scale, bottom*scale, left*scale) for (top, right, bottom, left) in ref_locations]
+    comp_locations = [(top*scale, right*scale, bottom*scale, left*scale) for (top, right, bottom, left) in comp_locations]
 
-    result = face_recognition.compare_faces([ref_encoding], compared_encoding, tolerance=0.5)
-    distance = face_recognition.face_distance([ref_encoding], compared_encoding)[0]
+    # Encode faces using original resolution
+    ref_encoding = face_recognition.face_encodings(ref_full, known_face_locations=[ref_locations[0]])[0]
+    comp_encoding = face_recognition.face_encodings(comp_full, known_face_locations=[comp_locations[0]])[0]
 
-    isMatch = bool(result[0])
+    # Compare
+    result = face_recognition.compare_faces([ref_encoding], comp_encoding, tolerance=0.5)
+    distance = face_recognition.face_distance([ref_encoding], comp_encoding)[0]
 
-    # Response
+    duration = round(time.time() - start_time, 3)
+
     return {
-        "matched": isMatch,
-        "distance": float(distance)
+        "matched": bool(result[0]),
+        "distance": float(distance),
+        "processing_time_seconds": duration
     }
