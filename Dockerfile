@@ -1,11 +1,11 @@
-# Use an official Python runtime as a parent image
+# Use Python 3.10 slim as base image
 FROM python:3.10-slim
 
-# Set environment variables
-ENV PYTHONDONTWRITEBYTECODE 1
-ENV PYTHONUNBUFFERED 1
+# Prevent Python from writing .pyc files and buffering stdout/stderr
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
-# Install system dependencies
+# Install OS-level dependencies required by face_recognition and cv2
 RUN apt-get update && apt-get install -y \
     build-essential \
     cmake \
@@ -16,24 +16,26 @@ RUN apt-get update && apt-get install -y \
     libboost-all-dev \
     libssl-dev \
     libffi-dev \
-    git \
+    ffmpeg \
     curl \
-    && rm -rf /var/lib/apt/lists/*
+    git \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Set working directory
+# Set working directory inside container
 WORKDIR /app
 
-# Copy requirements (assuming you’ll make one)
+# Copy dependency file first (enables Docker caching)
 COPY requirements.txt .
 
-# Install dependencies
-RUN pip install --upgrade pip && pip install -r requirements.txt
+# Upgrade pip and install Python dependencies
+RUN pip install --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt
 
-# Copy the FastAPI app into the container
+# Copy rest of the application code
 COPY . .
 
-# Expose the port FastAPI runs on
+# Expose FastAPI port
 EXPOSE 8000
 
-# Start the app using uvicorn
+# Command to run the FastAPI app
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
