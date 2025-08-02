@@ -67,6 +67,12 @@ async def verify_person(res: Response, comparedImg: UploadFile = Form(...), refI
 
     duration = round(time.time() - start_time, 3)
 
+    if not bool(result[0]):
+        return JSONResponse(status_code=400, content={"error": "Khuông mặt không trùng khớp",
+                                                      "matched": bool(result[0]),
+                                                      "distance": float(distance), 
+                                                      "processing_time_seconds": duration})
+
     return {
         "matched": bool(result[0]),
         "distance": float(distance),
