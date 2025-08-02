@@ -47,6 +47,10 @@ async def verify_person(res: Response, comparedImg: UploadFile = Form(...), refI
     ref_locations = face_recognition.face_locations(ref_small)
     comp_locations = face_recognition.face_locations(comp_small)
 
+    # throw error if multiple face detect
+    if len(comp_locations) > 1: 
+        return JSONResponse(status_code=400, content={"error": "Phát hiện nhiều hơn một khuôn mặt"})
+
     if not comp_locations:
         return JSONResponse(status_code=400, content={"error": "Không phát hiện khuôn mặt trong hình"})
     if not ref_locations:
