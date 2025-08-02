@@ -22,6 +22,19 @@ def load_and_resize_image(file, scale=0.25):
     small_image = cv2.resize(image, (0, 0), fx=scale, fy=scale)
     return image, small_image
 
+@app.post("/check-multiple-face")
+async def check_multiple_face(res: Response, img: UploadFile = Form(...)): 
+    _, img_small = load_and_resize_image(img.file)
+    img_locations = face_recognition.face_locations(img_small)
+    if not img_locations:
+        return JSONResponse(status_code=400, content={"error": "Không phát hiện khuôn mặt trong hình"})
+    
+    scale = 4  # since 0.25 used above
+    img_locations = [(top*scale, right*scale, bottom*scale, left*scale) for (top, right, bottom, left) in img_locations] 
+
+    if len(img_locations) > 1:
+        return JSONResponse(status_code=400, content={"error": "Phát hiện nhiều hơn một khuôn mặt"})
+
 @app.post("/verify")
 async def verify_person(res: Response, comparedImg: UploadFile = Form(...), refImg: UploadFile = Form(...)):
     start_time = time.time()
@@ -35,9 +48,9 @@ async def verify_person(res: Response, comparedImg: UploadFile = Form(...), refI
     comp_locations = face_recognition.face_locations(comp_small)
 
     if not comp_locations:
-        return JSONResponse(status_code=400, content={"detail": "No face detected in compared image."})
+        return JSONResponse(status_code=400, content={"error": "Không phát hiện khuôn mặt trong hình"})
     if not ref_locations:
-        return JSONResponse(status_code=400, content={"detail": "No face detected in reference image."})
+        return JSONResponse(status_code=400, content={"error": "Không phát hiện khuôn mặt trong hình"})
 
     # Scale up face locations
     scale = 4  # since 0.25 used above
